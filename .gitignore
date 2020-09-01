@@ -7,5 +7,6 @@ yarn-debug.log*
 yarn-error.log*
 secrets.js
 .secrets
+.secrets.js
 .notes
 notes.txt

@@ -1,8 +1,17 @@
 const puppeteer = require("puppeteer");
-const secrets = require("../secrets");
+const secrets = require("./secrets");
+
+
+var db = require('diskdb');
+
+
+// Initiate Database
+db = db.connect('./db', ['imageDataScrapes']);
+
 
 (async () => {
-  const browser = await puppeteer.launch({ headless: false });
+  const log = new Date();
+  const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
   await page.goto("https://instagram.com");
 
@@ -40,7 +49,10 @@ const secrets = require("../secrets");
     "Saturday",
   ];
 
-  const imgStringDescLength = 45;
+  const imgStringDescLength = 50;
+
+  // Initialize empty Array for containing all image data objects
+  const imageData = [];
 
   for (let ACCOUNT_NAME of ACCOUNT_NAMES) {
     const userName = ACCOUNT_NAME;
@@ -63,79 +75,96 @@ const secrets = require("../secrets");
     //     console.log({ profile });
     //   }
 
-    // Last 3 Photo post times &
+    // Loop through each image and collect data
+    for (let i = 0; i < 24; i++) {
 
-    await (await page.$("article a")).click();
-    await page.waitForSelector(".C4VMK > span");
+      await (await page.$$("article a"))[i].click();
+      await page.waitForSelector(".C4VMK > span");
 
-    const imgDesc = (
-      await page.$eval(".C4VMK > span", (el) => el.textContent)
-    ).substring(0, imgStringDescLength);
+      const imgDesc = (
+        await page.$eval(".C4VMK > span", (el) => el.textContent)
+      ).substring(0, imgStringDescLength);
 
-    const imgLikes =
-      parseInt(
-        await page.$eval(".Nm9Fw > button > span", (el) => el.textContent)
-      ) + 1;
+      const imgLikes =
+        parseInt(
+          await page.$eval(".Nm9Fw > button > span", (el) => el.textContent).catch((err) => true)
+        ) + 1;
 
-    // Make sure image is loaded
-    await page.waitForSelector("time");
+      // Make sure image is loaded
+      await page.waitForSelector("time");
 
-    // Collect the post time & convert to local date & time
-    const date = new Date(
-      await page.$eval("time", (el) => el.getAttribute("datetime"))
-    );
+      // Collect the post time & convert to local date & time
+      const f = await page.$eval("time", (el) => el.getAttribute("datetime"));
 
-    // Get the day of the week when the post was made
-    const d = weekday[date.getDay()];
-    // Get the time the post was made
-    const t = date.toLocaleTimeString("en", {
-      timeStyle: "short",
-      hour12: true,
-      timeZone: "UTC",
-    });
-    const h = date.toLocaleTimeString("en", {
-      timeStyle: "short",
-      hour12: true,
-      timeZone: "UTC",
-    });
+      const date = new Date(f);
 
-    // Section the post time into 1 of 4 categories
-    // Early Morning
-    // Late Morning
-    // Early Afternoon
-    // Late Afternoon
+      // Get the day of the week when the post was made
+      const d = weekday[date.getDay()];
+      // Get the time the post was made - returns string eg - "7:38AM"
+      const t = date.toLocaleTimeString("en", {
+        timeStyle: "short",
+        hour12: true,
+        timeZone: "UTC",
+      });
 
-    const z = parseInt(h.substring(0, 2));
-    let y = undefined;
-    if (z < 9) {
-      y = {
-        dayDesc: "Early Morning Before 9AM",
-        daySegment: 1,
-      };
-    } else if (z > 9 && z < 12) {
-      y = {
-        dayDesc: "Late Morning After 9AM Before 12",
-        daySegment: 2,
-      };
-    } else if (z > 12 && z < 20) {
-      y = {
-        dayDesc: "Early Arvo After 12PM Before 8PM",
-        daySegment: 3,
-      };
-    } else {
-      y = {
-        dayDesc: "Late Arvo After 8PM Before 12AM/Midnight",
-        daySegment: 4,
-      };
+
+
+      // Section the post time into 1 of 4 categories
+      // Early Morning
+      // Late Morning
+      // Early Afternoon
+      // Late Afternoon
+
+
+      const z = parseInt(f.substring(11, 13));
+      let y = undefined;
+      // Categorize into day segments
+      if (z < 9) {
+        y = {
+          dayDesc: "Early Morning Before 9AM",
+          daySegment: 1,
+        };
+      } else if (z > 9 && z < 12) {
+        y = {
+          dayDesc: "Late Morning After 9AM Before 12",
+          daySegment: 2,
+        };
+      } else if (z > 12 && z < 20) {
+        y = {
+          dayDesc: "Early Arvo After 12PM Before 8PM",
+          daySegment: 3,
+        };
+      } else {
+        y = {
+          dayDesc: "Late Arvo After 8PM Before 12AM/Midnight",
+          daySegment: 4,
+        };
+      }
+
+      // Collect all information into one object
+      const imgPostTime = { d, t, f, y };
+
+      const imageStats = { imgDesc, imgLikes, imgPostTime };
+
+      imageData.push(imageStats);
+
+
+      await page.waitForSelector('div.Igw0E button.wpO6b')
+      await (await page.$('div.Igw0E button.wpO6b')).click();
     }
 
-    const imgPostTime = { d, t, y };
 
-    const imageStats = { imgDesc, imgLikes, imgPostTime };
-    console.log(imageStats);
+
+
+
     // , imgLikes, imgPostTime
-    //await browser.close();
+    await browser.close();
   }
+  console.log(imageData);
+  dataObject = [];
+  dataObject.push(log, imageData);
+
+  db.imageDataScrapes.save(dataObject);
 })();
 
 // ## CODE FOR LIKING 2 MOST RECENT PHOTOS ##
