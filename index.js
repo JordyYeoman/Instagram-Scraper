@@ -1,28 +1,64 @@
 const puppeteer = require("puppeteer");
-const secrets = require("./secrets");
+//require("./server");
+require("dotenv").config();
+const fetch = require("node-fetch");
+const express = require("express");
+const mongoose = require("mongoose");
+const bodyParser = require("body-parser");
+const cors = require("cors");
 
+// Server Code
+// Setup Express Server
+var app = express();
+var port = process.env.PORT || 9001;
 
-var db = require('diskdb');
+// Middlwares
+app.use(bodyParser.json());
+app.use(cors());
 
+//Import Routes
+const postsRoute = require("./routes/posts");
+app.use("/posts", postsRoute);
 
-// Initiate Database
-db = db.connect('./db', ['imageDataScrapes']);
-
-
+// Connect to database
 (async () => {
-  const log = new Date();
-  const browser = await puppeteer.launch({ headless: true });
+  await mongoose
+    .connect(`${process.env.DB_CONNECTION}`, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      useFindAndModify: false,
+      useCreateIndex: true,
+    })
+    .then(() => {
+      console.log("Connected to database !!");
+    })
+    .catch((err) => {
+      console.log("Connection failed !!" + err.message);
+    });
+})();
+
+// Routes
+app.get("/", (req, res) => {
+  res.send("It's over 9000!");
+});
+
+app.listen(port, () => {
+  console.log("Server listening on port " + port);
+});
+
+// Scraper Code
+(async () => {
+  const browser = await puppeteer.launch({ headless: false });
   const page = await browser.newPage();
   await page.goto("https://instagram.com");
 
   await page.waitForSelector("input");
 
   // To run querySelectorAll with puppeteer use .$$
-
   // Once inputs have appeared on page - enter username & password
   const inputs = await page.$$("input");
-  await inputs[0].type(secrets.USERNAME);
-  await inputs[1].type(secrets.PASSWORD);
+  await inputs[0].type(`${process.env.USERLOGIN}`);
+  await inputs[1].type(`${process.env.PASSWORD}`);
 
   // Locate and press the login button
   const logInButton = (await page.$$("button"))[1];
@@ -58,7 +94,7 @@ db = db.connect('./db', ['imageDataScrapes']);
     const userName = ACCOUNT_NAME;
     await page.goto(`https://instagram.com/${ACCOUNT_NAME}`);
     await page.waitForSelector("img");
-    //     const imgSrc = await page.$eval("img", (el) => el.getAttribute("src"));
+    const imgSrc = await page.$eval("img", (el) => el.getAttribute("src"));
     //     const headerData = await page.$$eval("header li", (els) =>
     //       els.map((el) => el.textContent)
     //     );
@@ -76,8 +112,7 @@ db = db.connect('./db', ['imageDataScrapes']);
     //   }
 
     // Loop through each image and collect data
-    for (let i = 0; i < 24; i++) {
-
+    for (let i = 0; i < 1; i++) {
       await (await page.$$("article a"))[i].click();
       await page.waitForSelector(".C4VMK > span");
 
@@ -87,7 +122,9 @@ db = db.connect('./db', ['imageDataScrapes']);
 
       const imgLikes =
         parseInt(
-          await page.$eval(".Nm9Fw > button > span", (el) => el.textContent).catch((err) => true)
+          await page
+            .$eval(".Nm9Fw > button > span", (el) => el.textContent)
+            .catch((err) => true)
         ) + 1;
 
       // Make sure image is loaded
@@ -107,14 +144,11 @@ db = db.connect('./db', ['imageDataScrapes']);
         timeZone: "UTC",
       });
 
-
-
       // Section the post time into 1 of 4 categories
       // Early Morning
       // Late Morning
       // Early Afternoon
       // Late Afternoon
-
 
       const z = parseInt(f.substring(11, 13));
       let y = undefined;
@@ -144,29 +178,46 @@ db = db.connect('./db', ['imageDataScrapes']);
       // Collect all information into one object
       const imgPostTime = { d, t, f, y };
 
-      const imageStats = { imgDesc, imgLikes, imgPostTime };
+      const imageStats = { imgDesc, imgLikes, imgPostTime, userName, imgSrc };
 
       imageData.push(imageStats);
 
-
-      await page.waitForSelector('div.Igw0E button.wpO6b')
-      await (await page.$('div.Igw0E button.wpO6b')).click();
+      await page.waitForSelector("div.Igw0E button.wpO6b");
+      await (await page.$("div.Igw0E button.wpO6b")).click();
     }
 
-
-
-
-
     // , imgLikes, imgPostTime
-    await browser.close();
   }
-  console.log(imageData);
-  dataObject = [];
-  dataObject.push(log, imageData);
 
-  db.imageDataScrapes.save(dataObject);
+  // Push to local database
+  //db.imageDataScrapes.save(imageData);
+
+  // Push to MongoDB
+  const options = {
+    method: "POST",
+    body: JSON.stringify(imageData),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  };
+  fetch("http://localhost:9001/posts", options);
+  await browser.close();
 })();
 
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
 // ## CODE FOR LIKING 2 MOST RECENT PHOTOS ##
 
 // const ACCOUNT_NAME = "cruisin_overland";
